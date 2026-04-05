@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "一个轻量、纯前端的模拟赛车燃油计算器，帮助你在 ACC、iRacing、Assetto Corsa Evo、AMS2 等任意模拟赛车中快速估算：\r - 需要的总燃油量\r - 安全燃油建议（总圈数+2）\r - 需要的进站次数\r - 每箱燃油可跑的圈数（每段）\r - 最后一段的圈数与所需燃油",
   "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -12,6 +15,9 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "devDependencies": {
+    "vite": "^6.2.5"
+  },
   "bugs": {
     "url": "https://github.com/hwangzhun/Sim-Racing-Fuel--Calculator/issues"
   },
