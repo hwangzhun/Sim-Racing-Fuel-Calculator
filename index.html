@@ -18,7 +18,15 @@
     <meta name="twitter:image" content="icon-thumbnails-2.png">
     <link rel="stylesheet" href="styles.css">
     <!-- umami analytics -->
-    <script defer src="https://umami.hwangzhun.com/script.js" data-website-id="6cc715d8-ea37-43f8-b561-26ead490739e"></script>
+    <script>
+        if (location.protocol === 'http:' || location.protocol === 'https:') {
+            const analytics = document.createElement('script');
+            analytics.defer = true;
+            analytics.src = 'https://umami.hwangzhun.com/script.js';
+            analytics.dataset.websiteId = '6cc715d8-ea37-43f8-b561-26ead490739e';
+            document.head.appendChild(analytics);
+        }
+    </script>
 </head>
 <body>
     <main class="container">
@@ -28,19 +36,39 @@
             </div>
             <div class="title-row">
                 <h1 id="title">模拟赛车燃油计算器</h1>
-                <label class="lang-control">
+                <div class="lang-control">
                     <span class="visually-hidden" id="langLabel">语言</span>
-                    <select id="langSelect" aria-labelledby="langLabel">
+                    <select id="langSelect" class="visually-hidden" aria-labelledby="langLabel" tabindex="-1">
                         <option value="zh">中文</option>
                         <option value="en">English</option>
                     </select>
-                </label>
+                    <button id="langTrigger" class="lang-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">&#20013;&#25991;</button>
+                    <div id="langMenu" class="lang-menu" role="listbox" aria-labelledby="langLabel" hidden>
+                        <button type="button" role="option" data-locale="zh" aria-selected="true">&#20013;&#25991;</button>
+                        <button type="button" role="option" data-locale="en" aria-selected="false">English</button>
+                    </div>
+                </div>
             </div>
         </div>
         <p id="introNote" class="note">快速计算任何模拟赛车游戏（包括 ACC、iRacing、Assetto Corsa Evo、AMS2 等）的正确燃油量。只需输入每圈燃油量、比赛距离和油箱容量，即可查看需要进站次数和起始燃油量。</p>
 
         <section class="inputs">
             <h2 id="inputsHeader">输入</h2>
+            <div class="field-group">
+                <span id="lblRaceMode" class="field-label">&#27604;&#36187;&#31867;&#22411;</span>
+                <div class="race-tabs" role="tablist" aria-labelledby="lblRaceMode">
+                    <button type="button" role="tab" data-race-mode="time" aria-selected="true">&#35745;&#26102;&#36187;</button>
+                    <button type="button" role="tab" data-race-mode="laps" aria-selected="false">&#22280;&#25968;&#36187;</button>
+                </div>
+                <input id="raceMode" type="hidden" value="time">
+            </div>
+            <div class="field-group" id="raceLapsGroup" hidden>
+                <label id="lblRaceLaps" for="raceLaps">&#27604;&#36187;&#22280;&#25968;</label>
+                <div class="field with-unit">
+                    <input id="raceLaps" type="number" min="1" step="1" inputmode="numeric" placeholder="30">
+                    <span id="sufRaceLaps" class="suffix">&#22280;</span>
+                </div>
+            </div>
             <div class="field-group">
                 <label id="lblRaceTime">比赛时间</label>
                 <div class="inline-fields">
@@ -85,13 +113,21 @@
                 </div>
             </div>
 
+            <div class="field-group">
+                <label id="lblBufferLaps" for="bufferLaps">&#23433;&#20840;&#20313;&#37327;</label>
+                <div class="field with-unit">
+                    <input id="bufferLaps" type="number" min="0" max="10" step="1" inputmode="numeric" value="2">
+                    <span id="sufBufferLaps" class="suffix">&#22280;</span>
+                </div>
+            </div>
             <div class="actions">
                 <button id="calculateBtn" type="button">计算</button>
                 <button id="resetBtn" type="button">清空</button>
             </div>
+            <p id="formError" class="form-error" role="alert" hidden></p>
         </section>
 
-        <section class="outputs">
+        <section class="outputs" aria-live="polite">
             <h2 id="resultsHeader">结果</h2>
             <div class="results-grid">
                 <div class="result-item">
@@ -129,11 +165,59 @@
             </div>
             <p id="formulaNote" class="note">说明：总圈数按 ⌊比赛总时长 ÷ 平均单圈时间⌋ 计算。</p>
         </section>
+        <section class="bop-section" aria-labelledby="bopTitle">
+            <div class="bop-heading">
+                <div>
+                    <h2 id="bopTitle">ACC BOP &#21015;&#34920;</h2>
+                    <p id="bopIntro" class="note">Low Fuel Motorsport &#24403;&#21069;&#37197;&#37325;&#25968;&#25454;</p>
+                </div>
+                <button id="bopRefresh" class="secondary-button" type="button">&#21047;&#26032;&#25968;&#25454;</button>
+            </div>
+            <div class="bop-toolbar">
+            <div class="bop-track-section">
+                <span id="bopTrackLabel" class="field-label">&#36873;&#25321;&#36187;&#36947;</span>
+                <div class="bop-track-picker">
+                    <button id="bopTrackTrigger" class="bop-track-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">&#36873;&#25321;&#36187;&#36947;</button>
+                    <div id="bopTrackTabs" class="bop-track-menu" role="listbox" aria-labelledby="bopTrackLabel" hidden></div>
+                </div>
+                <p id="bopTrackMeta" class="bop-track-meta"></p>
+            </div>
+                <div class="bop-tabs" role="tablist" aria-label="BOP class">
+                    <button type="button" role="tab" data-bop-class="GT3" aria-selected="true">GT3</button>
+                    <button type="button" role="tab" data-bop-class="GT4" aria-selected="false">GT4</button>
+                    <button type="button" role="tab" data-bop-class="GT2" aria-selected="false">GT2</button>
+                </div>
+                <label class="bop-search">
+                    <span id="bopSearchLabel" class="visually-hidden">&#25628;&#32034;&#24403;&#21069;&#36187;&#36947;&#36710;&#36742;</span>
+                    <input id="bopSearch" type="search" placeholder="&#25628;&#32034;&#24403;&#21069;&#36187;&#36947;&#36710;&#36742;" disabled>
+                </label>
+            </div>
+            <p id="bopStatus" class="bop-status" role="status">&#27491;&#22312;&#21152;&#36733; BOP &#25968;&#25454;&#8230;</p>
+            <div id="bopTableWrap" class="bop-table-wrap" hidden>
+                <table class="bop-table">
+                    <thead>
+                        <tr>
+                            <th id="bopHeadCar" scope="col">&#36710;&#36742;</th>
+                            <th id="bopHeadYear" scope="col">&#24180;&#20221;</th>
+                            <th id="bopHeadRestrictor" scope="col">&#38480;&#27969;&#22120;</th>
+                            <th id="bopHeadBallast" scope="col">&#37197;&#37325;</th>
+                            <th id="bopHeadChange" scope="col">&#21464;&#21270;</th>
+                            <th id="bopHeadVersion" scope="col">&#29256;&#26412;</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bopTableBody"></tbody>
+                </table>
+            </div>
+            <p class="bop-source">
+                <span id="bopSourceLabel">&#25968;&#25454;&#26469;&#28304;&#65306;</span>
+                <a href="https://lowfuelmotorsport.com/accbop" target="_blank" rel="noopener noreferrer">Low Fuel Motorsport</a>
+            </p>
+        </section>
     </main>
 
     <footer class="footer">&copy; 2025 Hwangzhun. All rights reserved. </footer>
 
-    <script type="module" src="/script.js"></script>
+    <script src="script.js"></script>
     
 </body>
 </html>
