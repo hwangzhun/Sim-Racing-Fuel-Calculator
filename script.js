@@ -75,6 +75,18 @@
 
 	let currentLocale = 'zh';
 
+	// Analytics must never interrupt the calculator if blocked or unavailable.
+	function trackEvent(name, data = {}) {
+		if (!/^https?:$/.test(window.location.protocol)) return;
+		try {
+			if (typeof window.umami?.track !== 'function') return;
+			Promise.resolve(window.umami.track(name, { locale: currentLocale, ...data })).catch(() => {});
+		} catch (error) {
+			// Ignore tracker/network failures.
+		}
+	}
+
+
 	function safeStorageGet(key) {
 		try {
 			return window.localStorage ? window.localStorage.getItem(key) : null;
@@ -318,7 +330,10 @@
 		return { raceHours, raceMinutes, raceLaps, lapMinutes, lapSeconds, fuelPerLap, tankCapacity, bufferLaps };
 	}
 
-	function compute() {
+	function compute(source) {
+		const report = (status, data = {}) => {
+			if (source) trackEvent('fuel-calculation', { source, mode: el.raceMode.value, status, ...data });
+		};
 		const { raceHours, raceMinutes, raceLaps, lapMinutes, lapSeconds, fuelPerLap, tankCapacity, bufferLaps } = readInputs();
 
 		// Basic validation
@@ -328,6 +343,7 @@
 		if (!raceIsValid || !isFinite(lapMinutes) || !isFinite(lapSeconds) || !isFinite(fuelPerLap) || !isFinite(tankCapacity) || !Number.isInteger(bufferLaps)) {
 			showError(currentLocale === 'zh' ? '\u8bf7\u5b8c\u6574\u586b\u5199\u5fc5\u586b\u9879\uff0c\u5e76\u786e\u4fdd\u8f93\u5165\u4e3a\u6709\u6548\u7684\u6b63\u6570\u3002' : 'Complete all required fields with valid positive values.');
 			setOutputsInvalid();
+			report('invalid-input');
 			return;
 		}
 		showError('');
@@ -338,6 +354,7 @@
 		if ((el.raceMode.value === 'time' && (raceTotalSeconds <= 0 || lapTimeSeconds <= 0)) || fuelPerLap <= 0 || tankCapacity <= 0) {
 			setOutputsInvalid();
 			showError(currentLocale === 'zh' ? '\u5355\u5708\u65f6\u95f4\u3001\u6bcf\u5708\u6cb9\u8017\u548c\u6cb9\u7bb1\u5bb9\u91cf\u5fc5\u987b\u5927\u4e8e 0\u3002' : 'Lap time, fuel per lap and tank capacity must be greater than 0.');
+			report('invalid-input');
 			return;
 		}
 
@@ -347,6 +364,7 @@
 			: Math.ceil(raceTotalSeconds / lapTimeSeconds);
 		if (totalLaps <= 0) {
 			setOutputsInvalid();
+			report('invalid-input');
 			return;
 		}
 
@@ -364,6 +382,7 @@
 			el.lastStintLaps.textContent = '-';
 			el.stintFuelList.textContent = '-';
 			el.lastStintFuel.textContent = '-';
+			report('insufficient-tank');
 			return;
 		}
 
@@ -406,6 +425,7 @@
 		animateNumber(el.lastStintLaps, lastStintLaps, { duration: 500, decimals: 0, formatter: (v) => String(v) });
 		el.stintFuelList.textContent = strategy;
 		animateNumber(el.lastStintFuel, lastStintFuelLiters, { duration: 600, decimals: 2, formatter: (v) => formatLiters(Number(v)) });
+		report('success', { total_laps: totalLaps, pit_stops: pitStops, buffer_laps: bufferLaps });
 	}
 
 	function setOutputsInvalid() {
@@ -526,6 +546,7 @@
 			button.classList.toggle('active', selected);
 			button.setAttribute('aria-selected', String(selected));
 			button.addEventListener('click', () => {
+				if (activeBopTrack !== track.track_name) trackEvent('bop-track-change', { track: track.track_name, car_class: activeBopClass });
 				activeBopTrack = track.track_name;
 				$('bopSearch').disabled = false;
 				$('bopSearch').value = '';
@@ -606,6 +627,7 @@
 					$('bopTableWrap').hidden = true;
 					$('bopSearch').disabled = true;
 					$('bopStatus').textContent = getBopText().selectPrompt;
+					trackEvent('bop-load', { source: 'cache', status: 'success' });
 					refresh.disabled = false;
 					return;
 				}
@@ -619,6 +641,7 @@
 			const data = await response.json();
 			if (!Array.isArray(data)) throw new Error('Invalid BOP response');
 			bopData = data;
+			trackEvent('bop-load', { source: 'network', status: 'success', refresh: force });
 			try {
 				safeStorageSet(BOP_CACHE_KEY, JSON.stringify({ timestamp: Date.now(), data: bopData }));
 			} catch (error) {
@@ -634,6 +657,7 @@
 				$('bopStatus').textContent = getBopText().selectPrompt;
 			}
 		} catch (error) {
+			trackEvent('bop-load', { source: 'network', status: 'error', refresh: force });
 			console.error('[BOP] Failed to load data', error);
 			$('bopTableWrap').hidden = true;
 			$('bopStatus').textContent = getBopText().error;
@@ -659,6 +683,7 @@
 		});
 		document.querySelectorAll('[data-bop-class]').forEach((tab) => {
 			tab.addEventListener('click', () => {
+				if (activeBopClass !== tab.dataset.bopClass) trackEvent('bop-class-change', { car_class: tab.dataset.bopClass });
 				activeBopClass = tab.dataset.bopClass;
 				document.querySelectorAll('[data-bop-class]').forEach((item) => {
 					const selected = item === tab;
@@ -670,7 +695,14 @@
 		});
 		document.querySelector('[data-bop-class="GT3"]').classList.add('active');
 		$('bopSearch').addEventListener('input', () => { if (activeBopTrack) renderBopTable(); });
-		$('bopRefresh').addEventListener('click', () => loadBopData(true));
+		$('bopSearch').addEventListener('change', () => {
+			if (!activeBopTrack || !$('bopSearch').value.trim()) return;
+			trackEvent('bop-search', { track: activeBopTrack, car_class: activeBopClass, result_count: $('bopTableBody').children.length });
+		});
+		$('bopRefresh').addEventListener('click', () => {
+			trackEvent('bop-refresh');
+			loadBopData(true);
+		});
 		loadBopData();
 	}
 
@@ -695,6 +727,7 @@
 		options.forEach((option) => {
 			option.addEventListener('click', () => {
 				const locale = option.dataset.locale === 'en' ? 'en' : 'zh';
+				if (locale !== currentLocale) trackEvent('language-change', { from: currentLocale, to: locale });
 				$('langSelect').value = locale;
 				safeStorageSet('locale', locale);
 				applyTranslations(locale);
@@ -743,6 +776,7 @@
 		const modeTabs = Array.from(document.querySelectorAll('[data-race-mode]'));
 		modeTabs.forEach((tab, index) => {
 			tab.addEventListener('click', () => {
+				if (el.raceMode.value !== tab.dataset.raceMode) trackEvent('race-mode-change', { mode: tab.dataset.raceMode });
 				el.raceMode.value = tab.dataset.raceMode;
 				updateMode();
 			});
@@ -755,8 +789,9 @@
 				next.focus();
 			});
 		});
-		el.calculateBtn.addEventListener('click', compute);
+		el.calculateBtn.addEventListener('click', () => compute('button'));
 		el.resetBtn.addEventListener('click', () => {
+			trackEvent('fuel-reset', { mode: el.raceMode.value });
 			el.raceHours.value = '0';
 			el.raceLaps.value = '';
 			el.bufferLaps.value = '2';
@@ -773,7 +808,7 @@
 				showError('');
 				if (hasEnoughInput()) compute();
 			});
-			input.addEventListener('keydown', (event) => { if (event.key === 'Enter') compute(); });
+			input.addEventListener('keydown', (event) => { if (event.key === 'Enter') compute('keyboard'); });
 		});
 		try {
 			setupBopTable();
